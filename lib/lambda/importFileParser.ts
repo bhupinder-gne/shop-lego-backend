@@ -3,6 +3,9 @@ import * as AWS from 'aws-sdk';
 const csvParser = require('csv-parser');
 
 const s3 = new AWS.S3();
+const sqs = new AWS.SQS();
+
+const CATALOG_ITEMS_QUEUE_URL = process.env.CATALOG_ITEMS_QUEUE_URL!;
 
 export const importFileParser = async (event: S3Event) => {
   for (const record of event.Records) {
@@ -21,13 +24,26 @@ export const importFileParser = async (event: S3Event) => {
         [key: string]: string;
       }
 
+      const sendPromises: Promise<any>[] = [];
+
       s3Stream
         .pipe(csvParser())
         .on('data', (data: CsvRecord) => {
           console.log('Parsed record:', data);
+          sendPromises.push(
+            sqs.sendMessage({
+              QueueUrl: CATALOG_ITEMS_QUEUE_URL,
+              MessageBody: JSON.stringify(data),
+            }).promise()
+          );
         })
-        .on('end', () => {
-          resolve();
+        .on('end', async () => {
+          try {
+            await Promise.all(sendPromises);
+            resolve();
+          } catch (err) {
+            reject(err);
+          }
         })
         .on('error', (err: Error) => {
           console.error('Stream error:', err);
