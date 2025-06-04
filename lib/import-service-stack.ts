@@ -30,7 +30,9 @@ export class ImportServiceStack extends cdk.Stack {
   public catalogItemsQueue: sqs.Queue;
   public createProductTopic: sns.Topic;
 
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+  constructor(scope: Construct, id: string, props: cdk.StackProps & {
+      basicAuthorizer: lambda.IFunction;
+    }) {
     super(scope, id, props);
 
     const importServiceBucket = new s3.Bucket(this, 'ImportServiceBucket', {
@@ -81,8 +83,18 @@ export class ImportServiceStack extends cdk.Stack {
       ],
     });
 
+    const lambdaAuthorizer = new apigateway.TokenAuthorizer(
+      this,
+      "LambdaAuthorizer",
+      {
+        handler: props.basicAuthorizer,
+      },
+    );
+
     const importResource = this.api.root.addResource("import");
     importResource.addMethod("GET", importProductsFileLambdaIntegration, {
+      authorizer: lambdaAuthorizer,
+      authorizationType: apigateway.AuthorizationType.CUSTOM,
       methodResponses: [
         {
           statusCode: "200",
